@@ -20,40 +20,13 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 // Cashfree JS SDK is loaded via script tag in index.html
 // We call their hosted checkout which handles all UPI/card/netbanking
 
-async function createCashfreeOrder(orderId, amount, customerPhone, customerName) {
-  // In production this MUST be a backend call to protect your secret key
-  // For now using Cashfree test sandbox directly
-  const res = await fetch(
-    CF_ENV === "TEST"
-      ? "https://sandbox.cashfree.com/pg/orders"
-      : "https://api.cashfree.com/pg/orders",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-client-id": CF_APP_ID,
-        "x-client-secret": CF_SECRET,
-        "x-api-version": "2023-08-01",
-      },
-      body: JSON.stringify({
-        order_id:       orderId,
-        order_amount:   amount,
-        order_currency: "INR",
-        customer_details: {
-          customer_id:    orderId,
-          customer_phone: customerPhone.replace(/\D/g,"").slice(-10) || "9999999999",
-          customer_name:  customerName || "Player",
-          customer_email: "player@chessbet.app",
-        },
-        order_meta: {
-          return_url: window.location.href,
-          notify_url: "", // Add webhook URL if you have backend
-        },
-      }),
-    }
-  );
-  const data = await res.json();
-  return data; // contains payment_session_id
+async function createCashfreeOrder(orderId, amount, phone, name) {
+  const res = await fetch("/api/create-order", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderId, amount, phone, name }),
+  });
+  return await res.json();
 }
 
 async function triggerCashfreeCheckout(sessionId) {
@@ -72,54 +45,19 @@ async function triggerCashfreeCheckout(sessionId) {
 }
 
 async function verifyPayment(orderId) {
-  const res = await fetch(
-    (CF_ENV === "TEST"
-      ? "https://sandbox.cashfree.com/pg/orders/"
-      : "https://api.cashfree.com/pg/orders/") + orderId,
-    {
-      headers: {
-        "x-client-id":     CF_APP_ID,
-        "x-client-secret": CF_SECRET,
-        "x-api-version":   "2023-08-01",
-      },
-    }
-  );
+  const res = await fetch(`/api/verify-payment?orderId=${orderId}`);
   const data = await res.json();
-  return data.order_status === "PAID";
+  return data.paid;
 }
 
 async function sendPayout(transferId, upiId, amount, remarks) {
-  // Cashfree Payouts API
-  const res = await fetch(
-    CF_ENV === "TEST"
-      ? "https://payout-gamma.cashfree.com/payout/v1/requestTransfer"
-      : "https://payout-api.cashfree.com/payout/v1/requestTransfer",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type":    "application/json",
-        "x-client-id":     CF_APP_ID,
-        "x-client-secret": CF_SECRET,
-      },
-      body: JSON.stringify({
-        batchTransferId: transferId,
-        transfers: [{
-          transferId:   transferId,
-          amount:       amount.toString(),
-          remarks:      remarks,
-          bankAccount:  "",
-          ifsc:         "",
-          vpa:          upiId,
-          name:         "ChessBet Winner",
-          phone:        "9999999999",
-        }],
-      }),
-    }
-  );
-  const data = await res.json();
-  return data;
+  const res = await fetch("/api/send-payout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ transferId, upiId, amount, remarks }),
+  });
+  return await res.json();
 }
-
 // ─── SESSION ──────────────────────────────────────────────
 const saveSession  = d  => { try { localStorage.setItem(SESSION_KEY, JSON.stringify(d)); } catch(e){} };
 const loadSession  = () => { try { const s=localStorage.getItem(SESSION_KEY); return s?JSON.parse(s):null; } catch(e){return null;} };
