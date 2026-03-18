@@ -1,45 +1,39 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 
-// ── CONFIG ──────────────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://dmcjbzyyfgmezqmrvmco.supabase.co";
 const SUPABASE_KEY = "sb_publishable_Ofp9kSxXEco5WzyI4XVN8Q_gO9mk-jz";
-const OWNER_UPI    = "8754992499@upi"; // 👈 REPLACE WITH YOUR UPI ID
+const ADMIN_PIN    = "1234"; // 👈 Change this to your secret admin PIN
+const OWNER_UPI    = "8754992499@upi"; // 👈 Replace with your UPI (also set in Admin panel)
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ── CHESS LOGIC ──────────────────────────────────────────────────────────────
+// ─── CHESS LOGIC ─────────────────────────────────────────────────────────────
 const PIECES = {
   wK:"♔",wQ:"♕",wR:"♖",wB:"♗",wN:"♘",wP:"♙",
   bK:"♚",bQ:"♛",bR:"♜",bB:"♝",bN:"♞",bP:"♟",
 };
-
-function initBoard() {
-  const b = Array(8).fill(null).map(()=>Array(8).fill(null));
-  const back = ["R","N","B","Q","K","B","N","R"];
-  for(let c=0;c<8;c++){
-    b[0][c]="b"+back[c]; b[1][c]="bP";
-    b[7][c]="w"+back[c]; b[6][c]="wP";
-  }
+function initBoard(){
+  const b=Array(8).fill(null).map(()=>Array(8).fill(null));
+  const back=["R","N","B","Q","K","B","N","R"];
+  for(let c=0;c<8;c++){b[0][c]="b"+back[c];b[1][c]="bP";b[7][c]="w"+back[c];b[6][c]="wP";}
   return b;
 }
-
-const col  = p => p?p[0]:null;
-const enemy= (p,t)=> p&&col(p)!==t;
-const friend=(p,t)=> p&&col(p)===t;
+const pc=p=>p?p[0]:null;
+const isEnemy=(p,t)=>p&&pc(p)!==t;
+const isFriend=(p,t)=>p&&pc(p)===t;
 function inB(r,c){return r>=0&&r<8&&c>=0&&c<8;}
-
-function getRaw(board,r,c,turn,lastMove){
-  const p=board[r][c]; if(!p||col(p)!==turn) return [];
-  const t=p[1], mv=[];
-  const add=(tr,tc)=>{if(inB(tr,tc)&&!friend(board[tr][tc],turn))mv.push([tr,tc]);};
-  const slide=(dr,dc)=>{let tr=r+dr,tc=c+dc;while(inB(tr,tc)){if(friend(board[tr][tc],turn))break;mv.push([tr,tc]);if(enemy(board[tr][tc],turn))break;tr+=dr;tc+=dc;}};
+function getRaw(board,r,c,turn,lm){
+  const p=board[r][c];if(!p||pc(p)!==turn)return[];
+  const t=p[1],mv=[];
+  const add=(tr,tc)=>{if(inB(tr,tc)&&!isFriend(board[tr][tc],turn))mv.push([tr,tc]);};
+  const slide=(dr,dc)=>{let tr=r+dr,tc=c+dc;while(inB(tr,tc)){if(isFriend(board[tr][tc],turn))break;mv.push([tr,tc]);if(isEnemy(board[tr][tc],turn))break;tr+=dr;tc+=dc;}};
   if(t==="P"){
     const d=turn==="w"?-1:1,s=turn==="w"?6:1;
     if(inB(r+d,c)&&!board[r+d][c]){mv.push([r+d,c]);if(r===s&&!board[r+2*d][c])mv.push([r+2*d,c]);}
     for(const dc of[-1,1]){
-      if(inB(r+d,c+dc)&&enemy(board[r+d][c+dc],turn))mv.push([r+d,c+dc]);
-      if(lastMove&&lastMove.piece===(turn==="w"?"bP":"wP")&&lastMove.to[0]===r&&lastMove.to[1]===c+dc&&Math.abs(lastMove.from[0]-lastMove.to[0])===2)mv.push([r+d,c+dc]);
+      if(inB(r+d,c+dc)&&isEnemy(board[r+d][c+dc],turn))mv.push([r+d,c+dc]);
+      if(lm&&lm.piece===(turn==="w"?"bP":"wP")&&lm.to[0]===r&&lm.to[1]===c+dc&&Math.abs(lm.from[0]-lm.to[0])===2)mv.push([r+d,c+dc]);
     }
   }else if(t==="N"){for(const[dr,dc]of[[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]])add(r+dr,c+dc);}
   else if(t==="B"){for(const[dr,dc]of[[-1,-1],[-1,1],[1,-1],[1,1]])slide(dr,dc);}
@@ -52,555 +46,724 @@ function getRaw(board,r,c,turn,lastMove){
   }
   return mv;
 }
-
-function findKing(board,turn){
-  for(let r=0;r<8;r++)for(let c=0;c<8;c++)if(board[r][c]===turn+"K")return[r,c];
-  return null;
-}
-
+function findKing(board,turn){for(let r=0;r<8;r++)for(let c=0;c<8;c++)if(board[r][c]===turn+"K")return[r,c];return null;}
 function applyMove(board,from,to){
   const nb=board.map(r=>[...r]);
   const p=nb[from[0]][from[1]];
-  nb[to[0]][to[1]]=p; nb[from[0]][from[1]]=null;
-  if(p[1]==="K"){
-    if(from[1]===4&&to[1]===6){nb[from[0]][5]=nb[from[0]][7];nb[from[0]][7]=null;}
-    if(from[1]===4&&to[1]===2){nb[from[0]][3]=nb[from[0]][0];nb[from[0]][0]=null;}
-  }
+  nb[to[0]][to[1]]=p;nb[from[0]][from[1]]=null;
+  if(p[1]==="K"){if(from[1]===4&&to[1]===6){nb[from[0]][5]=nb[from[0]][7];nb[from[0]][7]=null;}if(from[1]===4&&to[1]===2){nb[from[0]][3]=nb[from[0]][0];nb[from[0]][0]=null;}}
   if(p==="wP"&&to[0]===0)nb[to[0]][to[1]]="wQ";
   if(p==="bP"&&to[0]===7)nb[to[0]][to[1]]="bQ";
   return nb;
 }
-
 function isInCheck(board,turn){
-  const king=findKing(board,turn); if(!king)return false;
+  const king=findKing(board,turn);if(!king)return false;
   const opp=turn==="w"?"b":"w";
   for(let r=0;r<8;r++)for(let c=0;c<8;c++)
-    if(col(board[r][c])===opp&&getRaw(board,r,c,opp,null).some(([tr,tc])=>tr===king[0]&&tc===king[1]))return true;
+    if(pc(board[r][c])===opp&&getRaw(board,r,c,opp,null).some(([tr,tc])=>tr===king[0]&&tc===king[1]))return true;
   return false;
 }
-
-function getLegal(board,r,c,turn,lastMove){
-  return getRaw(board,r,c,turn,lastMove).filter(([tr,tc])=>!isInCheck(applyMove(board,[r,c],[tr,tc]),turn));
+function getLegal(board,r,c,turn,lm){
+  return getRaw(board,r,c,turn,lm).filter(([tr,tc])=>!isInCheck(applyMove(board,[r,c],[tr,tc]),turn));
 }
-
-function hasAny(board,turn,lastMove){
+function hasAny(board,turn,lm){
   for(let r=0;r<8;r++)for(let c=0;c<8;c++)
-    if(col(board[r][c])===turn&&getLegal(board,r,c,turn,lastMove).length>0)return true;
+    if(pc(board[r][c])===turn&&getLegal(board,r,c,turn,lm).length>0)return true;
   return false;
 }
-
-function boardToStr(b){return JSON.stringify(b);}
-function strToBoard(s){return JSON.parse(s);}
-function makeRoomCode(){return Math.floor(1000+Math.random()*9000).toString();}
-function upiLink(pa,pn,am,tn){return `upi://pay?pa=${pa}&pn=${encodeURIComponent(pn)}&am=${am}&cu=INR&tn=${encodeURIComponent(tn)}`;}
-
-// ── STYLES ───────────────────────────────────────────────────────────────────
-const S = `
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Crimson+Pro:ital,wght@0,300;0,400;1,300&display=swap');
-*{box-sizing:border-box;margin:0;padding:0;}
-body{background:#0a0a0f;font-family:'Crimson Pro',serif;min-height:100vh;color:#e8dcc8;}
-:root{
-  --gold:#c9a84c;--gold-light:#f0d080;--dark:#0a0a0f;
-  --surface:#12121a;--surface2:#1a1a26;--border:#2a2a3a;
-  --text:#e8dcc8;--dim:#8a8070;
-  --ws:#f0d9b5;--bs:#b58863;
-  --hi:rgba(201,168,76,0.45);--danger:#c0392b;
+function getCaptured(board){
+  const all={wP:8,wN:2,wB:2,wR:2,wQ:1,bP:8,bN:2,bB:2,bR:2,bQ:1};
+  const on={};
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++)if(board[r][c])on[board[r][c]]=(on[board[r][c]]||0)+1;
+  const cap={w:[],b:[]};
+  for(const[k,v]of Object.entries(all)){const miss=v-(on[k]||0);for(let i=0;i<miss;i++)cap[k[0]].push(k);}
+  return cap;
 }
-.app{min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:16px;background:radial-gradient(ellipse at top,#1a1428 0%,#0a0a0f 60%);}
-.logo{font-family:'Playfair Display',serif;font-size:clamp(26px,6vw,44px);font-weight:900;color:var(--gold);letter-spacing:3px;text-align:center;padding:16px 0 2px;text-shadow:0 0 40px rgba(201,168,76,0.3);}
-.tagline{font-size:13px;color:var(--dim);letter-spacing:4px;text-transform:uppercase;margin-bottom:20px;text-align:center;}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;width:100%;max-width:420px;box-shadow:0 8px 40px rgba(0,0,0,0.6);}
-.card-title{font-family:'Playfair Display',serif;font-size:20px;color:var(--gold);margin-bottom:4px;}
-.card-sub{font-size:14px;color:var(--dim);margin-bottom:20px;line-height:1.6;}
-input{width:100%;background:#0d0d15;border:1px solid var(--border);border-radius:6px;padding:11px 14px;color:var(--text);font-family:'Crimson Pro',serif;font-size:16px;margin-bottom:10px;outline:none;transition:border-color .2s;}
-input:focus{border-color:var(--gold);}
-input::placeholder{color:var(--dim);}
-.btn{width:100%;padding:13px;background:linear-gradient(135deg,#b8922a,#c9a84c,#b8922a);border:none;border-radius:8px;color:#0a0a0f;font-family:'Playfair Display',serif;font-size:15px;font-weight:700;letter-spacing:2px;cursor:pointer;transition:all .2s;text-transform:uppercase;box-shadow:0 4px 20px rgba(201,168,76,0.25);margin-top:4px;}
-.btn:hover{transform:translateY(-1px);box-shadow:0 6px 28px rgba(201,168,76,0.4);}
-.btn:disabled{opacity:.4;cursor:not-allowed;transform:none;}
-.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--dim);font-size:13px;letter-spacing:1px;box-shadow:none;padding:10px;margin-top:8px;}
-.btn-ghost:hover{border-color:var(--gold);color:var(--gold);box-shadow:none;}
-.btn-blue{background:linear-gradient(135deg,#1557b0,#1a73e8);color:#fff;box-shadow:0 4px 20px rgba(26,115,232,0.3);}
-.btn-green{background:linear-gradient(135deg,#1a6b3a,#27ae60);color:#fff;box-shadow:0 4px 20px rgba(39,174,96,0.3);}
-.fee-box{background:linear-gradient(135deg,rgba(201,168,76,.08),rgba(201,168,76,.03));border:1px solid rgba(201,168,76,.2);border-radius:8px;padding:12px 16px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;}
-.fee-item{text-align:center;}
-.fee-num{font-family:'Playfair Display',serif;font-size:20px;color:var(--gold-light);display:block;}
-.fee-label{font-size:11px;color:var(--dim);letter-spacing:1px;}
-.fee-arrow{color:var(--dim);font-size:18px;}
-.section{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px;}
-.section-label{font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--gold);margin-bottom:10px;}
-.room-code{font-family:'Playfair Display',serif;font-size:48px;font-weight:900;color:var(--gold);letter-spacing:10px;text-align:center;padding:12px 0;text-shadow:0 0 20px rgba(201,168,76,.4);}
-.status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gold);box-shadow:0 0 8px var(--gold);animation:pulse 1.2s ease-in-out infinite;margin-right:8px;}
+function makeCode(){return Math.floor(1000+Math.random()*9000).toString();}
+function upiLink(pa,pn,am,tn){return`upi://pay?pa=${encodeURIComponent(pa)}&pn=${encodeURIComponent(pn)}&am=${am}&cu=INR&tn=${encodeURIComponent(tn)}`;}
+function fmtTime(s){const m=Math.floor(s/60);return`${m}:${(s%60).toString().padStart(2,"0")}`;}
+
+// ─── STYLES ──────────────────────────────────────────────────────────────────
+const S=`
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#1a1a1a;font-family:'Inter',sans-serif;min-height:100vh;color:#e0e0e0;-webkit-font-smoothing:antialiased;}
+:root{
+  --bg:#1a1a1a;--surface:#262626;--s2:#2d2d2d;--s3:#333;
+  --border:#3a3a3a;--b2:#444;
+  --green:#4d8f4d;--gd:#3a6b3a;--gl:#5ea55e;
+  --cream:#f0d9b5;--brown:#b58863;
+  --text:#e0e0e0;--dim:#888;--dim2:#555;
+  --gold:#f0a500;--danger:#e05252;--blue:#4a9eff;
+}
+.app{min-height:100vh;display:flex;flex-direction:column;align-items:center;background:var(--bg);}
+.header{width:100%;background:#212121;border-bottom:1px solid var(--border);padding:0 16px;display:flex;align-items:center;justify-content:space-between;height:50px;position:sticky;top:0;z-index:100;}
+.logo{display:flex;align-items:center;gap:8px;font-size:18px;font-weight:700;color:#fff;}
+.logo span{font-size:22px;}
+.admin-btn{background:none;border:1px solid var(--border);border-radius:6px;color:var(--dim);font-size:12px;padding:5px 10px;cursor:pointer;}
+.admin-btn:hover{border-color:var(--gold);color:var(--gold);}
+.main{width:100%;max-width:460px;padding:14px;display:flex;flex-direction:column;gap:12px;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px;}
+.ct{font-size:17px;font-weight:700;color:#fff;margin-bottom:3px;}
+.cs{font-size:13px;color:var(--dim);margin-bottom:14px;line-height:1.5;}
+.tabs{display:flex;background:var(--s2);border-radius:8px;padding:3px;margin-bottom:14px;}
+.tab{flex:1;padding:8px;text-align:center;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;color:var(--dim);transition:all .2s;}
+.tab.on{background:var(--green);color:#fff;}
+input,select{width:100%;background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:10px 13px;color:var(--text);font-family:'Inter',sans-serif;font-size:14px;margin-bottom:10px;outline:none;transition:border-color .2s;}
+input:focus,select:focus{border-color:var(--green);}
+input::placeholder{color:var(--dim2);}
+.btn{width:100%;padding:11px;background:var(--green);border:none;border-radius:7px;color:#fff;font-family:'Inter',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s;margin-top:2px;}
+.btn:hover{background:var(--gl);}
+.btn:disabled{opacity:.4;cursor:not-allowed;}
+.bg{background:transparent;border:1px solid var(--border);color:var(--dim);margin-top:8px;}
+.bg:hover{border-color:var(--green);color:var(--green);background:transparent;}
+.bb{background:#1e3a6e;}.bb:hover{background:#264d96;}
+.br{background:#6e1e1e;}.br:hover{background:#962626;}
+.bsm{padding:7px 14px;font-size:12px;width:auto;border-radius:6px;margin-top:0;}
+.fee-row{display:flex;align-items:center;justify-content:space-between;background:var(--s2);border-radius:8px;padding:11px 14px;margin-bottom:14px;}
+.fi{text-align:center;}
+.fa{font-size:20px;font-weight:700;color:#fff;display:block;}
+.fl{font-size:11px;color:var(--dim);text-transform:uppercase;}
+.rc-box{background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:18px;text-align:center;margin-bottom:12px;}
+.rc{font-size:50px;font-weight:700;color:#fff;letter-spacing:12px;}
+.rh{font-size:12px;color:var(--dim);margin-top:5px;}
+.sr{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--dim);justify-content:center;padding:8px 0;}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 1.2s ease-in-out infinite;flex-shrink:0;}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-.info-row{display:flex;justify-content:space-between;font-size:14px;padding:6px 0;border-bottom:1px solid var(--border);}
-.info-row:last-child{border-bottom:none;}
-.info-row .lbl{color:var(--dim);}
-.info-row .val{color:var(--text);font-weight:600;}
-.info-row.hi .lbl{color:var(--gold);font-family:'Playfair Display',serif;}
-.info-row.hi .val{color:var(--gold-light);font-size:18px;font-family:'Playfair Display',serif;}
-.game-wrap{width:100%;max-width:500px;display:flex;flex-direction:column;align-items:center;gap:10px;}
-.player-bar{width:100%;display:flex;justify-content:space-between;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;}
-.p-info{display:flex;align-items:center;gap:8px;}
-.p-avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;background:var(--surface2);border:2px solid var(--border);}
-.p-upi{font-size:13px;color:var(--text);}
-.p-role{font-size:11px;color:var(--dim);}
-.active-dot{width:8px;height:8px;border-radius:50%;background:var(--gold);box-shadow:0 0 8px var(--gold);animation:pulse 1.2s ease-in-out infinite;}
-.turn-bar{font-family:'Playfair Display',serif;font-size:14px;color:var(--gold);letter-spacing:2px;text-align:center;padding:7px 16px;background:rgba(201,168,76,.07);border:1px solid rgba(201,168,76,.15);border-radius:8px;width:100%;}
-.board-wrap{position:relative;width:100%;aspect-ratio:1;max-width:460px;}
-.board{display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);width:100%;height:100%;border:3px solid var(--gold);border-radius:4px;overflow:hidden;box-shadow:0 0 40px rgba(201,168,76,.15),0 8px 32px rgba(0,0,0,.6);}
-.sq{display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;transition:background .1s;user-select:none;-webkit-tap-highlight-color:transparent;}
-.sq.light{background:var(--ws);}
-.sq.dark{background:var(--bs);}
-.sq.selected{background:var(--hi)!important;}
-.sq.legal{background:rgba(201,168,76,.22)!important;}
-.sq.legal::after{content:'';position:absolute;width:30%;height:30%;border-radius:50%;background:rgba(201,168,76,.6);}
-.sq.legal.hp::after{display:none;}
-.sq.legal.hp{box-shadow:inset 0 0 0 3px rgba(201,168,76,.7);}
-.sq.check{background:rgba(192,57,43,.55)!important;}
-.piece{font-size:clamp(20px,5.2vw,38px);line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));z-index:1;}
-.coord-f{position:absolute;bottom:1px;right:2px;font-size:9px;font-weight:700;opacity:.5;}
-.coord-r{position:absolute;top:1px;left:2px;font-size:9px;font-weight:700;opacity:.5;}
-.winner-wrap{width:100%;max-width:420px;text-align:center;display:flex;flex-direction:column;gap:14px;}
-.crown{font-size:60px;animation:float 2s ease-in-out infinite;}
-@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
-.win-title{font-family:'Playfair Display',serif;font-size:clamp(26px,7vw,44px);font-weight:900;color:var(--gold);text-shadow:0 0 30px rgba(201,168,76,.5);}
-.pay-card{background:var(--surface);border:1px solid rgba(201,168,76,.3);border-radius:12px;padding:18px;}
-.gpay-a{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:13px;border:none;border-radius:8px;color:#fff;font-family:'Playfair Display',serif;font-size:15px;font-weight:700;cursor:pointer;text-decoration:none;transition:all .2s;}
-.waiting-wrap{width:100%;max-width:420px;display:flex;flex-direction:column;gap:14px;text-align:center;}
-.pay-step{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:16px;text-align:left;}
-.pay-step-num{font-family:'Playfair Display',serif;font-size:28px;color:var(--gold);float:left;margin-right:12px;line-height:1;}
-.pay-step-text{font-size:14px;line-height:1.6;color:var(--text);}
-.pay-step-text strong{color:var(--gold-light);}
-.badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;letter-spacing:2px;text-transform:uppercase;}
-.badge-wait{background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.3);color:var(--gold);}
-.badge-ready{background:rgba(39,174,96,.1);border:1px solid rgba(39,174,96,.3);color:#27ae60;}
-.tabs{display:flex;gap:8px;margin-bottom:18px;}
-.tab{flex:1;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--dim);font-family:'Playfair Display',serif;font-size:14px;cursor:pointer;transition:all .2s;text-align:center;}
-.tab.active{background:rgba(201,168,76,.1);border-color:var(--gold);color:var(--gold);}
-@media(max-width:380px){.card{padding:16px 12px;}.room-code{font-size:38px;letter-spacing:6px;}}
+.ir{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;}
+.ir:last-child{border-bottom:none;}
+.il{color:var(--dim);}
+.iv{color:#fff;font-weight:500;}
+.ir.tot .il{color:var(--gl);font-weight:600;font-size:14px;}
+.ir.tot .iv{font-size:18px;font-weight:700;}
+.err{color:var(--danger);font-size:12px;margin-bottom:8px;margin-top:-6px;}
+
+/* GAME */
+.gp{width:100%;max-width:460px;padding:8px;display:flex;flex-direction:column;gap:6px;}
+.pp{display:flex;justify-content:space-between;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px;}
+.ppl{display:flex;align-items:center;gap:8px;}
+.av{width:30px;height:30px;border-radius:50%;background:var(--s2);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:15px;}
+.av.act{border-color:var(--green);}
+.pn{font-size:13px;font-weight:600;color:#fff;}
+.pr{font-size:11px;color:var(--dim);}
+.cap{font-size:11px;color:var(--dim);min-height:14px;}
+.tmr{font-size:17px;font-weight:700;color:#fff;background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:4px 10px;min-width:60px;text-align:center;font-variant-numeric:tabular-nums;}
+.tmr.at{background:var(--gd);border-color:var(--green);}
+.tmr.low{color:var(--danger);border-color:var(--danger);animation:pulse .7s ease-in-out infinite;}
+.board-wrap{position:relative;width:100%;}
+.board{display:grid;grid-template-columns:18px repeat(8,1fr);width:100%;aspect-ratio:9/9.5;}
+.rl{display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--dim);font-weight:500;}
+.fl2{display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--dim);font-weight:500;}
+.sq{display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;user-select:none;-webkit-tap-highlight-color:transparent;}
+.sq.lt{background:var(--cream);}
+.sq.dk{background:var(--brown);}
+.sq.sel{background:#f6f669!important;}
+.sq.lm::after{content:'';position:absolute;width:33%;height:33%;border-radius:50%;background:rgba(0,0,0,0.17);}
+.sq.lc{box-shadow:inset 0 0 0 4px rgba(0,0,0,0.18);}
+.sq.lf{background:#cdd16f!important;}
+.sq.lt2{background:#aaa23a!important;}
+.sq.ck{background:radial-gradient(ellipse at center,#e05252 0%,rgba(192,57,43,0.6) 60%,transparent 100%)!important;}
+.piece{font-size:clamp(18px,4.8vw,34px);line-height:1;z-index:1;}
+.sq:active .piece{transform:scale(.9);}
+.sb{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 14px;text-align:center;font-size:13px;font-weight:500;}
+.sb.mt{background:var(--gd);border-color:var(--green);color:#fff;}
+.sb.ck2{background:#3d1a1a;border-color:var(--danger);color:var(--danger);}
+.ga{display:flex;gap:6px;}
+.ga .btn{margin-top:0;}
+.ob{background:#2a2a0a;border:1px solid #6a6a00;border-radius:8px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.ot{font-size:13px;color:#d4d400;}
+.oa{display:flex;gap:6px;}
+.chat{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.ch{padding:7px 12px;border-bottom:1px solid var(--border);font-size:11px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;}
+.cm{height:90px;overflow-y:auto;padding:8px 12px;display:flex;flex-direction:column;gap:3px;}
+.cm::-webkit-scrollbar{width:3px;}
+.cm::-webkit-scrollbar-thumb{background:var(--border);}
+.msg{font-size:12px;line-height:1.4;}
+.snd{font-weight:600;color:var(--gl);margin-right:3px;}
+.snd.me{color:var(--blue);}
+.sys{color:var(--dim);font-style:italic;}
+.ci{display:flex;gap:6px;padding:7px;border-top:1px solid var(--border);}
+.ci input{margin-bottom:0;flex:1;}
+.cs2{padding:8px 12px;background:var(--green);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;}
+
+/* WINNER */
+.wp{width:100%;max-width:460px;padding:14px;display:flex;flex-direction:column;gap:12px;align-items:center;text-align:center;}
+.ri{font-size:60px;}
+.rt{font-size:30px;font-weight:700;color:#fff;}
+.rs{font-size:13px;color:var(--dim);}
+.pb{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:12px;border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;transition:all .2s;}
+.pb.pg{background:#1e5c2e;}
+.pb.pbl{background:#1e3d6e;}
+.pb:hover{opacity:.85;transform:translateY(-1px);}
+
+/* ADMIN */
+.ap{width:100%;max-width:460px;padding:14px;display:flex;flex-direction:column;gap:12px;}
+.sg{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px;}
+.sb2{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:12px;text-align:center;}
+.sn{font-size:24px;font-weight:700;color:#fff;}
+.sl{font-size:11px;color:var(--dim);text-transform:uppercase;margin-top:2px;}
+.gr{background:var(--s2);border-radius:6px;padding:9px 11px;margin-bottom:6px;font-size:12px;}
+.gt{display:flex;justify-content:space-between;margin-bottom:3px;}
+.gu{color:var(--dim);}
+.badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;text-transform:uppercase;}
+.bd{background:#1e3d1e;color:var(--gl);}
+.bp{background:#1e2d3d;color:var(--blue);}
+.bw{background:#2d2d1e;color:#d4c050;}
+
+/* PAY STEP */
+.ps{background:var(--s2);border-radius:8px;padding:13px;margin-bottom:10px;}
+.pst{font-size:13px;font-weight:600;color:#fff;margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+.snum{background:var(--green);color:#fff;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;}
 `;
 
-// ── SCREENS ───────────────────────────────────────────────────────────────────
+// ─── LOBBY ────────────────────────────────────────────────────────────────────
+function LobbyScreen({onCreated,onJoined,settings}){
+  const [tab,setTab]=useState("create");
+  const [upi,setUpi]=useState("");
+  const [code,setCode]=useState("");
+  const [time,setTime]=useState("10");
+  const [loading,setLoading]=useState(false);
+  const [err,setErr]=useState("");
+  const fee=settings?.entry_fee||10;
+  const cut=settings?.platform_cut||2;
+  const prize=fee*2-cut*2;
 
-// 1. LOBBY — enter UPI, create or join room
-function LobbyScreen({ onCreated, onJoined }) {
-  const [tab, setTab] = useState("create");
-  const [upi, setUpi] = useState("");
-  const [joinCode, setJoinCode] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
-
-  const handleCreate = async () => {
-    if (!upi.trim()) return setErr("Enter your UPI ID");
-    setLoading(true); setErr("");
-    const code = makeRoomCode();
-    const { error } = await supabase.from("games").insert({
-      id: code,
-      player1_upi: upi.trim(),
-      board: boardToStr(initBoard()),
-      turn: "w",
-      status: "waiting",
+  const create=async()=>{
+    if(!upi.trim())return setErr("Enter your UPI ID");
+    setLoading(true);setErr("");
+    const id=makeCode();
+    const mins=parseInt(time)||10;
+    const{error}=await supabase.from("games").insert({
+      id,player1_upi:upi.trim(),board:JSON.stringify(initBoard()),
+      turn:"w",status:"waiting",timer_mins:mins,
+      p1_time:mins*60,p2_time:mins*60,
     });
     setLoading(false);
-    if (error) return setErr("Error creating room. Try again.");
-    onCreated({ code, upi: upi.trim(), role: "w" });
+    if(error)return setErr("Could not create. Try again.");
+    onCreated({code:id,upi:upi.trim(),role:"w"});
   };
 
-  const handleJoin = async () => {
-    if (!upi.trim()) return setErr("Enter your UPI ID");
-    if (!joinCode.trim()) return setErr("Enter room code");
-    setLoading(true); setErr("");
-    const { data, error } = await supabase.from("games").select("*").eq("id", joinCode.trim()).single();
-    if (error || !data) { setLoading(false); return setErr("Room not found. Check the code."); }
-    if (data.status !== "waiting") { setLoading(false); return setErr("This game already started."); }
-    if (data.player1_upi === upi.trim()) { setLoading(false); return setErr("You created this room. Share the code!"); }
-    const { error: e2 } = await supabase.from("games").update({ player2_upi: upi.trim(), status: "payment" }).eq("id", joinCode.trim());
+  const join=async()=>{
+    if(!upi.trim())return setErr("Enter your UPI ID");
+    if(!code.trim())return setErr("Enter room code");
+    setLoading(true);setErr("");
+    const{data,error}=await supabase.from("games").select("*").eq("id",code.trim()).single();
+    if(error||!data){setLoading(false);return setErr("Room not found.");}
+    if(data.status!=="waiting"){setLoading(false);return setErr("Game already started.");}
+    if(data.player1_upi===upi.trim()){setLoading(false);return setErr("You created this room!");}
+    await supabase.from("games").update({player2_upi:upi.trim(),status:"payment"}).eq("id",code.trim());
     setLoading(false);
-    if (e2) return setErr("Error joining. Try again.");
-    onJoined({ code: joinCode.trim(), upi: upi.trim(), role: "b", p1upi: data.player1_upi });
+    onJoined({code:code.trim(),upi:upi.trim(),role:"b",game:data});
   };
 
-  return (
-    <div className="card">
-      <div className="card-title">♟ New Game</div>
-      <div className="card-sub">Enter your UPI ID to play. ₹10 entry per player.</div>
-      <div className="fee-box">
-        <div className="fee-item"><span className="fee-num">₹10</span><span className="fee-label">Each Player</span></div>
-        <div className="fee-arrow">→</div>
-        <div className="fee-item"><span className="fee-num">₹16</span><span className="fee-label">Winner Gets</span></div>
-        <div className="fee-arrow">+</div>
-        <div className="fee-item"><span className="fee-num">₹4</span><span className="fee-label">Platform</span></div>
+  return(
+    <div className="main">
+      <div className="card">
+        <div className="ct">Find a Game</div>
+        <div className="cs">Enter your UPI ID to play for real money</div>
+        <div className="fee-row">
+          <div className="fi"><span className="fa">₹{fee}</span><span className="fl">Entry</span></div>
+          <span style={{color:"var(--dim)"}}>→</span>
+          <div className="fi"><span className="fa">₹{prize}</span><span className="fl">Winner</span></div>
+          <span style={{color:"var(--dim)"}}>+</span>
+          <div className="fi"><span className="fa">₹{cut*2}</span><span className="fl">Platform</span></div>
+        </div>
+        <div className="tabs">
+          <div className={`tab${tab==="create"?" on":""}`} onClick={()=>setTab("create")}>Create Room</div>
+          <div className={`tab${tab==="join"?" on":""}`} onClick={()=>setTab("join")}>Join Room</div>
+        </div>
+        <input placeholder="Your UPI ID (e.g. 9876543210@ybl)" value={upi} onChange={e=>{setUpi(e.target.value);setErr("");}}/>
+        {tab==="create"&&(
+          <select value={time} onChange={e=>setTime(e.target.value)}>
+            <option value="3">3 min per player</option>
+            <option value="5">5 min per player</option>
+            <option value="10">10 min per player</option>
+            <option value="15">15 min per player</option>
+          </select>
+        )}
+        {tab==="join"&&<input placeholder="4-digit Room Code" value={code} maxLength={4} onChange={e=>{setCode(e.target.value);setErr("");}}/>}
+        {err&&<div className="err">{err}</div>}
+        <button className="btn" disabled={loading} onClick={tab==="create"?create:join}>
+          {loading?"Please wait...":tab==="create"?"Create Room":"Join Room"}
+        </button>
       </div>
-      <div className="tabs">
-        <div className={`tab${tab==="create"?" active":""}`} onClick={()=>setTab("create")}>Create Room</div>
-        <div className={`tab${tab==="join"?" active":""}`} onClick={()=>setTab("join")}>Join Room</div>
-      </div>
-      <input placeholder="Your UPI ID (e.g. 9876543210@upi)" value={upi} onChange={e=>{setUpi(e.target.value);setErr("");}} />
-      {tab==="join" && <input placeholder="4-digit Room Code" value={joinCode} maxLength={4} onChange={e=>{setJoinCode(e.target.value);setErr("");}} />}
-      {err && <div style={{color:"#e74c3c",fontSize:13,marginBottom:8}}>{err}</div>}
-      <button className="btn" disabled={loading} onClick={tab==="create"?handleCreate:handleJoin}>
-        {loading ? "Please wait..." : tab==="create" ? "Create Room" : "Join Room"}
-      </button>
     </div>
   );
 }
 
-// 2. WAITING — player1 waits for player2 to join
-function WaitingScreen({ code, upi, onReady }) {
-  useEffect(() => {
-    const ch = supabase.channel("wait_" + code)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "games", filter: `id=eq.${code}` },
-        payload => { if (payload.new.status === "payment") onReady(payload.new); })
+// ─── WAITING ─────────────────────────────────────────────────────────────────
+function WaitingScreen({code,upi,onReady}){
+  useEffect(()=>{
+    const ch=supabase.channel("w"+code)
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"games",filter:`id=eq.${code}`},
+        p=>{if(["payment","playing"].includes(p.new.status))onReady(p.new);})
       .subscribe();
-    // also poll in case realtime is slow
-    const interval = setInterval(async () => {
-      const { data } = await supabase.from("games").select("*").eq("id", code).single();
-      if (data && data.status === "payment") { clearInterval(interval); onReady(data); }
-    }, 3000);
-    return () => { supabase.removeChannel(ch); clearInterval(interval); };
-  }, [code, onReady]);
-
-  return (
-    <div className="waiting-wrap">
-      <div>
-        <div style={{fontFamily:"'Playfair Display',serif",fontSize:18,color:"var(--gold)",marginBottom:6}}>Room Created!</div>
-        <div style={{fontSize:14,color:"var(--dim)"}}>Share this code with your opponent</div>
-      </div>
-      <div className="room-code">{code}</div>
-      <div style={{fontSize:13,color:"var(--dim)"}}>
-        <span className="status-dot"/>Waiting for opponent to join...
-      </div>
-      <div className="section" style={{textAlign:"left"}}>
-        <div className="section-label">Your UPI</div>
-        <div style={{fontSize:15,color:"var(--text)"}}>{upi}</div>
-        <div style={{fontSize:12,color:"var(--dim)",marginTop:4}}>You play as White ♔</div>
+    const iv=setInterval(async()=>{
+      const{data}=await supabase.from("games").select("*").eq("id",code).single();
+      if(data&&["payment","playing"].includes(data.status)){clearInterval(iv);onReady(data);}
+    },3000);
+    return()=>{supabase.removeChannel(ch);clearInterval(iv);};
+  },[code,onReady]);
+  return(
+    <div className="main">
+      <div className="card">
+        <div className="ct">Room Created ✓</div>
+        <div className="cs">Share this code with your opponent</div>
+        <div className="rc-box"><div className="rc">{code}</div><div className="rh">Share this 4-digit code</div></div>
+        <div style={{background:"var(--s2)",borderRadius:8,padding:"11px 13px",fontSize:13}}>
+          <div style={{color:"var(--dim)",marginBottom:3}}>Your UPI</div>
+          <div style={{color:"#fff",fontWeight:500}}>{upi}</div>
+          <div style={{color:"var(--dim)",fontSize:11,marginTop:3}}>You play as White ♔</div>
+        </div>
+        <div className="sr"><div className="dot"/><span>Waiting for opponent...</span></div>
       </div>
     </div>
   );
 }
 
-// 3. PAYMENT — both players pay before game starts
-function PaymentScreen({ game, myUpi, myRole, onPaid }) {
-  const [paid, setPaid] = useState(false);
-  const [waitingOther, setWaitingOther] = useState(false);
-  const p1paid = game.p1_paid;
-  const p2paid = game.p2_paid;
+// ─── PAYMENT ─────────────────────────────────────────────────────────────────
+function PaymentScreen({game,myRole,myUpi,onPaid,settings}){
+  const [paid,setPaid]=useState(false);
+  const fee=settings?.entry_fee||10;
+  const ownerUpi=settings?.owner_upi||OWNER_UPI;
+  const myField=myRole==="w"?"p1_paid":"p2_paid";
+  const href=upiLink(ownerUpi,"ChessApp",fee,`Chess entry Room ${game.id}`);
 
-  const myPayField  = myRole === "w" ? "p1_paid" : "p2_paid";
-  const oppPayField = myRole === "w" ? "p2_paid" : "p1_paid";
-  const oppUpi      = myRole === "w" ? game.player2_upi : game.player1_upi;
-
-  const upiAmt = upiLink(OWNER_UPI, "ChessApp", 10, `Chess entry fee - Room ${game.id}`);
-
-  const handleConfirm = async () => {
+  const confirm=async()=>{
     setPaid(true);
-    await supabase.from("games").update({ [myPayField]: true }).eq("id", game.id);
-    setWaitingOther(true);
+    await supabase.from("games").update({[myField]:true}).eq("id",game.id);
   };
 
-  useEffect(() => {
-    const ch = supabase.channel("pay_" + game.id)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "games", filter: `id=eq.${game.id}` },
-        payload => {
-          const d = payload.new;
-          if (d.p1_paid && d.p2_paid) onPaid(d);
-        })
+  useEffect(()=>{
+    const ch=supabase.channel("pay"+game.id)
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"games",filter:`id=eq.${game.id}`},
+        p=>{if(p.new.p1_paid&&p.new.p2_paid)onPaid(p.new);})
       .subscribe();
-    const interval = setInterval(async () => {
-      const { data } = await supabase.from("games").select("*").eq("id", game.id).single();
-      if (data && data.p1_paid && data.p2_paid) { clearInterval(interval); onPaid(data); }
-    }, 3000);
-    return () => { supabase.removeChannel(ch); clearInterval(interval); };
-  }, [game.id, onPaid]);
+    const iv=setInterval(async()=>{
+      const{data}=await supabase.from("games").select("*").eq("id",game.id).single();
+      if(data?.p1_paid&&data?.p2_paid){clearInterval(iv);onPaid(data);}
+    },3000);
+    return()=>{supabase.removeChannel(ch);clearInterval(iv);};
+  },[game.id,onPaid]);
 
-  return (
-    <div className="waiting-wrap">
-      <div>
-        <div style={{fontFamily:"'Playfair Display',serif",fontSize:18,color:"var(--gold)"}}>Pay to Play</div>
-        <div style={{fontSize:13,color:"var(--dim)",marginTop:4}}>Room {game.id} · Both players must pay ₹10</div>
-      </div>
-
-      <div className="section" style={{textAlign:"left"}}>
-        <div className="section-label">Your UPI: {myUpi}</div>
-        <div className="info-row"><span className="lbl">Entry Fee</span><span className="val">₹10</span></div>
-        <div className="info-row"><span className="lbl">Pay To</span><span className="val">{OWNER_UPI}</span></div>
-        <div className="info-row"><span className="lbl">Opponent</span><span className="val">{oppUpi}</span></div>
-      </div>
-
-      {!paid ? (
-        <>
-          <a className="gpay-a btn" style={{background:"linear-gradient(135deg,#1557b0,#1a73e8)",boxShadow:"0 4px 20px rgba(26,115,232,0.35)"}} href={upiAmt}>
-            <span style={{fontSize:20}}>📱</span> Pay ₹10 Entry Fee via GPay
-          </a>
-          <div style={{fontSize:12,color:"var(--dim)",textAlign:"center"}}>
-            After paying, tap the button below
+  return(
+    <div className="main">
+      <div className="card">
+        <div className="ct">Pay to Play</div>
+        <div className="cs">Room {game.id} · Pay ₹{fee} entry fee</div>
+        <div className="ps">
+          <div className="pst"><div className="snum">1</div>Pay ₹{fee} via GPay</div>
+          <div className="ir"><span className="il">Pay To</span><span className="iv">{ownerUpi}</span></div>
+          <div className="ir"><span className="il">Amount</span><span className="iv">₹{fee}</span></div>
+          <div className="ir"><span className="il">Your UPI</span><span className="iv">{myUpi}</span></div>
+        </div>
+        {!paid?(
+          <>
+            <a className="pb pbl" href={href} style={{marginBottom:10,borderRadius:7}}>
+              <span>📱</span> Open GPay — Pay ₹{fee}
+            </a>
+            <div style={{textAlign:"center",fontSize:12,color:"var(--dim)",marginBottom:10}}>After paying, confirm below ↓</div>
+            <button className="btn" onClick={confirm}>✅ I Have Paid</button>
+          </>
+        ):(
+          <div style={{textAlign:"center",padding:"12px 0"}}>
+            <div style={{fontSize:32,marginBottom:6}}>✅</div>
+            <div style={{fontWeight:600,color:"#fff",marginBottom:4}}>Payment confirmed!</div>
+            <div className="sr"><div className="dot"/><span>Waiting for opponent to pay...</span></div>
           </div>
-          <button className="btn btn-green" onClick={handleConfirm}>
-            ✅ I Have Paid — Ready to Play
-          </button>
-        </>
-      ) : (
-        <div style={{textAlign:"center"}}>
-          <span className="badge badge-ready">✅ You Paid</span>
-          <div style={{fontSize:13,color:"var(--dim)",marginTop:12}}>
-            <span className="status-dot"/>Waiting for opponent to pay...
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── GAME ─────────────────────────────────────────────────────────────────────
+function GameScreen({game,myRole,onGameOver,settings}){
+  const [board,setBoard]=useState(()=>JSON.parse(game.board));
+  const [turn,setTurn]=useState(game.turn||"w");
+  const [sel,setSel]=useState(null);
+  const [legal,setLegal]=useState([]);
+  const [lm,setLm]=useState(null);
+  const [inCheck,setCheck]=useState(false);
+  const [ended,setEnded]=useState(false);
+  const [p1Time,setP1Time]=useState(game.p1_time||(game.timer_mins||10)*60);
+  const [p2Time,setP2Time]=useState(game.p2_time||(game.timer_mins||10)*60);
+  const [drawOffer,setDrawOffer]=useState(null);
+  const [chat,setChat]=useState([{sys:true,text:"Game started! Good luck 🎯"}]);
+  const [chatInput,setChatInput]=useState("");
+  const [rematchReq,setRematchReq]=useState(null);
+  const chatRef=useRef(null);
+  const myTurn=turn===myRole;
+  const oppRole=myRole==="w"?"b":"w";
+  const p1upi=game.player1_upi;
+  const p2upi=game.player2_upi;
+  const myUpi=myRole==="w"?p1upi:p2upi;
+  const oppUpi=myRole==="w"?p2upi:p1upi;
+  const myTime=myRole==="w"?p1Time:p2Time;
+  const oppTime=myRole==="w"?p2Time:p1Time;
+
+  useEffect(()=>{
+    if(ended)return;
+    const iv=setInterval(()=>{
+      if(turn==="w")setP1Time(t=>{if(t<=1){supabase.from("games").update({status:"done",winner:"b",end_reason:"timeout"}).eq("id",game.id);return 0;}return t-1;});
+      else setP2Time(t=>{if(t<=1){supabase.from("games").update({status:"done",winner:"w",end_reason:"timeout"}).eq("id",game.id);return 0;}return t-1;});
+    },1000);
+    return()=>clearInterval(iv);
+  },[turn,ended,game.id]);
+
+  useEffect(()=>{
+    const ch=supabase.channel("g"+game.id)
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"games",filter:`id=eq.${game.id}`},p=>{
+        const d=p.new;
+        if(d.board){const nb=JSON.parse(d.board);setBoard(nb);if(d.turn)setCheck(isInCheck(nb,d.turn));}
+        if(d.turn)setTurn(d.turn);
+        if(d.last_move)setLm(JSON.parse(d.last_move));
+        if(d.p1_time!==undefined)setP1Time(d.p1_time);
+        if(d.p2_time!==undefined)setP2Time(d.p2_time);
+        if(d.draw_offer!==undefined)setDrawOffer(d.draw_offer||null);
+        if(d.chat_log)setChat(JSON.parse(d.chat_log));
+        if(d.rematch_req)setRematchReq(d.rematch_req);
+        if(d.status==="done"){setEnded(true);onGameOver(d);}
+      }).subscribe();
+    return()=>supabase.removeChannel(ch);
+  },[game.id,onGameOver]);
+
+  useEffect(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},[chat]);
+
+  const doMove=async(from,to)=>{
+    const nb=applyMove(board,from,to);
+    const newLm={piece:board[from[0]][from[1]],from,to};
+    const nextTurn=turn==="w"?"b":"w";
+    const check=isInCheck(nb,nextTurn);
+    let status="playing",winner=null,reason=null;
+    if(!hasAny(nb,nextTurn,newLm)){status="done";winner=check?turn:"draw";reason=check?"checkmate":"stalemate";}
+    setBoard(nb);setTurn(nextTurn);setCheck(check);setSel(null);setLegal([]);setLm(newLm);
+    const tf=turn==="w"?"p1_time":"p2_time";
+    const tv=turn==="w"?p1Time:p2Time;
+    await supabase.from("games").update({board:JSON.stringify(nb),turn:nextTurn,last_move:JSON.stringify(newLm),[tf]:tv,status,winner,end_reason:reason}).eq("id",game.id);
+    if(status==="done"){setEnded(true);onGameOver({...game,winner,status:"done",end_reason:reason,board:JSON.stringify(nb)});}
+  };
+
+  const handleSq=useCallback((r,c)=>{
+    if(!myTurn||ended)return;
+    const piece=board[r][c];
+    if(sel){
+      const isL=legal.some(([lr,lc])=>lr===r&&lc===c);
+      if(isL){doMove(sel,[r,c]);return;}
+      if(pc(piece)===turn){setSel([r,c]);setLegal(getLegal(board,r,c,turn,lm));return;}
+      setSel(null);setLegal([]);return;
+    }
+    if(pc(piece)===turn){setSel([r,c]);setLegal(getLegal(board,r,c,turn,lm));}
+  },[board,turn,myTurn,sel,legal,lm,ended]);
+
+  const offerDraw=async()=>await supabase.from("games").update({draw_offer:myRole}).eq("id",game.id);
+  const acceptDraw=async()=>await supabase.from("games").update({status:"done",winner:"draw",end_reason:"agreement"}).eq("id",game.id);
+  const declineDraw=async()=>await supabase.from("games").update({draw_offer:null}).eq("id",game.id);
+  const resign=async()=>{
+    if(!window.confirm("Resign this game?"))return;
+    await supabase.from("games").update({status:"done",winner:oppRole,end_reason:"resign"}).eq("id",game.id);
+  };
+  const sendChat=async()=>{
+    if(!chatInput.trim())return;
+    const nm={sender:myRole,text:chatInput.trim()};
+    const nc=[...chat,nm];setChat(nc);setChatInput("");
+    await supabase.from("games").update({chat_log:JSON.stringify(nc)}).eq("id",game.id);
+  };
+  const requestRematch=async()=>await supabase.from("games").update({rematch_req:myRole}).eq("id",game.id);
+
+  const kingPos=inCheck?findKing(board,turn):null;
+  const captured=getCaptured(board);
+  const rows=myRole==="b"?[7,6,5,4,3,2,1,0]:[0,1,2,3,4,5,6,7];
+  const cols=myRole==="b"?[7,6,5,4,3,2,1,0]:[0,1,2,3,4,5,6,7];
+  const files="abcdefgh";
+
+  return(
+    <div className="gp">
+      {/* Opponent */}
+      <div className="pp">
+        <div className="ppl">
+          <div className={`av${turn===oppRole&&!ended?" act":""}`}>{oppRole==="w"?"♔":"♚"}</div>
+          <div>
+            <div className="pn">{oppUpi}</div>
+            <div className="cap">{(oppRole==="w"?captured.w:captured.b).map(p=>PIECES[p]).join("")}</div>
+          </div>
+        </div>
+        <div className={`tmr${turn===oppRole&&!ended?" at":""}${oppTime<30?" low":""}`}>{fmtTime(oppTime)}</div>
+      </div>
+
+      {drawOffer&&drawOffer!==myRole&&!ended&&(
+        <div className="ob">
+          <span className="ot">Opponent offers a draw</span>
+          <div className="oa">
+            <button className="btn bsm" onClick={acceptDraw}>Accept</button>
+            <button className="btn br bsm" onClick={declineDraw}>Decline</button>
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// 4. GAME BOARD
-function GameScreen({ game, myRole, onGameOver }) {
-  const [board, setBoard] = useState(() => strToBoard(game.board));
-  const [turn, setTurn]   = useState(game.turn || "w");
-  const [selected, setSel] = useState(null);
-  const [legalMvs, setLegal] = useState([]);
-  const [lastMove, setLast]  = useState(null);
-  const [inCheck, setCheck]  = useState(false);
-  const [ended, setEnded]    = useState(false);
-  const myTurn = turn === myRole;
-
-  // Subscribe to remote moves
-  useEffect(() => {
-    const ch = supabase.channel("game_" + game.id)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "games", filter: `id=eq.${game.id}` },
-        payload => {
-          const d = payload.new;
-          if (d.board) setBoard(strToBoard(d.board));
-          if (d.turn)  setTurn(d.turn);
-          if (d.last_move) setLast(JSON.parse(d.last_move));
-          if (d.status === "done") { setEnded(true); onGameOver(d); }
-          const nb = strToBoard(d.board);
-          setCheck(isInCheck(nb, d.turn));
-        })
-      .subscribe();
-    return () => supabase.removeChannel(ch);
-  }, [game.id, onGameOver]);
-
-  const handleSquare = useCallback(async (r, c) => {
-    if (!myTurn || ended) return;
-    const piece = board[r][c];
-    if (selected) {
-      const isLegal = legalMvs.some(([lr,lc])=>lr===r&&lc===c);
-      if (isLegal) {
-        const nb = applyMove(board, selected, [r,c]);
-        const lm = { piece: board[selected[0]][selected[1]], from: selected, to: [r,c] };
-        const nextTurn = turn === "w" ? "b" : "w";
-        const check = isInCheck(nb, nextTurn);
-        let newStatus = "playing";
-        let winner = null;
-        if (!hasAny(nb, nextTurn, lm)) {
-          newStatus = "done";
-          winner = check ? turn : "draw";
-        }
-        setSel(null); setLegal([]); setBoard(nb); setTurn(nextTurn); setCheck(check);
-        await supabase.from("games").update({
-          board: boardToStr(nb),
-          turn: nextTurn,
-          last_move: JSON.stringify(lm),
-          status: newStatus,
-          winner: winner,
-        }).eq("id", game.id);
-        if (newStatus === "done") { setEnded(true); onGameOver({ ...game, winner, status: "done", board: boardToStr(nb) }); }
-        return;
-      }
-      if (col(piece) === turn && col(piece) === myRole) {
-        setSel([r,c]); setLegal(getLegal(board,r,c,turn,lastMove)); return;
-      }
-      setSel(null); setLegal([]); return;
-    }
-    if (col(piece) === turn && col(piece) === myRole) {
-      setSel([r,c]); setLegal(getLegal(board,r,c,turn,lastMove));
-    }
-  }, [board, turn, myRole, myTurn, selected, legalMvs, lastMove, ended, game, onGameOver]);
-
-  const kingPos = inCheck ? findKing(board, turn) : null;
-  const p1upi = game.player1_upi;
-  const p2upi = game.player2_upi;
-  const myUpi = myRole === "w" ? p1upi : p2upi;
-  const oppUpi = myRole === "w" ? p2upi : p1upi;
-
-  return (
-    <div className="game-wrap">
-      {/* Opponent bar */}
-      <div className="player-bar">
-        <div className="p-info">
-          <div className="p-avatar">{myRole==="w"?"♚":"♔"}</div>
-          <div><div className="p-upi">{oppUpi}</div><div className="p-role">{myRole==="w"?"Black — Opponent":"White — Opponent"}</div></div>
-        </div>
-        {turn !== myRole && !ended && <div className="active-dot"/>}
-      </div>
-
-      {/* Turn banner */}
-      <div className="turn-bar">
-        {ended ? "Game Over" : myTurn ? `Your turn ${inCheck?"— CHECK ⚠":""}` : `Opponent's turn${inCheck?" — CHECK ⚠":""}`}
-      </div>
+      {drawOffer===myRole&&!ended&&<div className="ob"><span className="ot">Draw offer sent...</span></div>}
 
       {/* Board */}
       <div className="board-wrap">
-        <div className="board">
-          {(myRole==="b" ? [...board].reverse() : board).map((row, rIdx) => {
-            const actualR = myRole==="b" ? 7-rIdx : rIdx;
-            return (myRole==="b" ? [...row].reverse() : row).map((piece, cIdx) => {
-              const actualC = myRole==="b" ? 7-cIdx : cIdx;
-              const isLight = (actualR+actualC)%2===0;
-              const isSel   = selected&&selected[0]===actualR&&selected[1]===actualC;
-              const isLegal = legalMvs.some(([lr,lc])=>lr===actualR&&lc===actualC);
-              const isCheck = kingPos&&kingPos[0]===actualR&&kingPos[1]===actualC;
-              let cls=`sq ${isLight?"light":"dark"}`;
-              if(isSel) cls+=" selected";
-              else if(isLegal) cls+=" legal";
-              if(isCheck) cls+=" check";
-              if(isLegal&&piece) cls+=" hp";
-              return (
-                <div key={`${actualR}${actualC}`} className={cls} onClick={()=>handleSquare(actualR,actualC)}>
+        <div className="board" style={{gridTemplateRows:"repeat(8,1fr) 18px"}}>
+          {rows.map((r,ri)=>[
+            <div key={`r${r}`} className="rl">{8-r}</div>,
+            ...cols.map(c=>{
+              const piece=board[r][c];
+              const isLight=(r+c)%2===0;
+              const isSel=sel&&sel[0]===r&&sel[1]===c;
+              const isL=legal.some(([lr,lc])=>lr===r&&lc===c);
+              const isLF=lm&&lm.from[0]===r&&lm.from[1]===c;
+              const isLT=lm&&lm.to[0]===r&&lm.to[1]===c;
+              const isCk=kingPos&&kingPos[0]===r&&kingPos[1]===c;
+              let cls=`sq ${isLight?"lt":"dk"}`;
+              if(isSel)cls+=" sel";
+              else if(isLF)cls+=" lf";
+              else if(isLT)cls+=" lt2";
+              if(isL&&piece)cls+=" lc";else if(isL)cls+=" lm";
+              if(isCk)cls+=" ck";
+              return(
+                <div key={`${r}${c}`} className={cls} onClick={()=>handleSq(r,c)}>
                   {piece&&<span className="piece">{PIECES[piece]}</span>}
-                  {actualC===0&&<span className="coord-r" style={{color:isLight?"#b58863":"#f0d9b5"}}>{8-actualR}</span>}
-                  {actualR===7&&<span className="coord-f" style={{color:isLight?"#b58863":"#f0d9b5"}}>{"abcdefgh"[actualC]}</span>}
                 </div>
               );
-            });
-          })}
+            }),
+            ...(ri===7?[<div key="corner" style={{background:"transparent"}}/>,
+              ...cols.map(c=><div key={`f${c}`} className="fl2">{files[c]}</div>)]:[])
+          ])}
         </div>
       </div>
 
-      {/* My bar */}
-      <div className="player-bar">
-        <div className="p-info">
-          <div className="p-avatar">{myRole==="w"?"♔":"♚"}</div>
-          <div><div className="p-upi">{myUpi}</div><div className="p-role">{myRole==="w"?"White — You":"Black — You"}</div></div>
+      {/* Status */}
+      <div className={`sb${ended?"":myTurn&&!inCheck?" mt":inCheck?" ck2":""}`}>
+        {ended?"Game Over":myTurn?`Your turn${inCheck?" — CHECK ⚠️":""}`:inCheck?"Opponent in Check ⚠️":"Opponent's turn..."}
+      </div>
+
+      {/* My panel */}
+      <div className="pp">
+        <div className="ppl">
+          <div className={`av${myTurn&&!ended?" act":""}`}>{myRole==="w"?"♔":"♚"}</div>
+          <div>
+            <div className="pn">{myUpi} <span style={{fontSize:11,color:"var(--dim)"}}>(You)</span></div>
+            <div className="cap">{(myRole==="w"?captured.w:captured.b).map(p=>PIECES[p]).join("")}</div>
+          </div>
         </div>
-        {myTurn && !ended && <div className="active-dot"/>}
-      </div>
-    </div>
-  );
-}
-
-// 5. WINNER SCREEN
-function WinnerScreen({ game, myRole, myUpi, onPlayAgain }) {
-  const winner = game.winner;
-  const isDraw = winner === "draw";
-  const iWon   = winner === myRole;
-  const p1upi  = game.player1_upi;
-  const p2upi  = game.player2_upi;
-  const winnerUpi = winner === "w" ? p1upi : winner === "b" ? p2upi : null;
-
-  const winLink = winnerUpi
-    ? upiLink(winnerUpi, "Chess Winner", 16, `Chess winnings Room ${game.id}`)
-    : null;
-  const feeLink = upiLink(OWNER_UPI, "ChessApp Fee", 4, `Platform fee Room ${game.id}`);
-
-  return (
-    <div className="winner-wrap">
-      <div>
-        <div className="crown">{isDraw?"🤝":iWon?"👑":"😔"}</div>
-        <div className="win-title">{isDraw?"Draw!":iWon?"You Won!":"You Lost!"}</div>
-        {!isDraw&&<div style={{fontSize:15,color:"var(--dim)",marginTop:4}}>{winnerUpi} wins ₹16</div>}
+        <div className={`tmr${myTurn&&!ended?" at":""}${myTime<30?" low":""}`}>{fmtTime(myTime)}</div>
       </div>
 
-      <div className="pay-card">
-        <div style={{fontFamily:"'Playfair Display',serif",color:"var(--gold)",marginBottom:12,fontSize:15}}>Payment Summary</div>
-        <div className="info-row"><span className="lbl">{p1upi} paid</span><span className="val">₹10</span></div>
-        <div className="info-row"><span className="lbl">{p2upi} paid</span><span className="val">₹10</span></div>
-        <div className="info-row"><span className="lbl">Platform fee (₹2×2)</span><span className="val">₹4</span></div>
-        {!isDraw&&<div className="info-row hi"><span className="lbl">{winnerUpi} receives</span><span className="val">₹16</span></div>}
-        {isDraw&&<div className="info-row hi"><span className="lbl">Each player refund</span><span className="val">₹9</span></div>}
-      </div>
-
-      {/* Only show pay buttons if you are the admin/owner — in real use, owner pays winner */}
-      {winLink && (
-        <a className="gpay-a" style={{background:"linear-gradient(135deg,#1557b0,#1a73e8)",boxShadow:"0 4px 20px rgba(26,115,232,.35)"}} href={winLink}>
-          <span style={{fontSize:20}}>📱</span> Pay ₹16 to {winnerUpi}
-        </a>
+      {!ended&&(
+        <div className="ga">
+          <button className="btn bg bsm" onClick={offerDraw} disabled={drawOffer===myRole}>Draw</button>
+          <button className="btn br bsm" onClick={resign}>Resign</button>
+        </div>
       )}
-      <a className="gpay-a" style={{background:"linear-gradient(135deg,#1a6b3a,#27ae60)",boxShadow:"0 4px 20px rgba(39,174,96,.35)"}} href={feeLink}>
-        <span style={{fontSize:20}}>💼</span> Pay ₹4 Platform Fee
-      </a>
+      {ended&&!rematchReq&&<button className="btn" onClick={requestRematch}>Request Rematch</button>}
+      {ended&&rematchReq&&rematchReq!==myRole&&(
+        <div style={{textAlign:"center",fontSize:13,color:"var(--gl)",padding:"4px"}}>Opponent wants a rematch!</div>
+      )}
 
-      <div style={{fontSize:12,color:"var(--dim)",textAlign:"center",lineHeight:1.7}}>
-        Show winner this screen to confirm payment.<br/>
-        Platform fee goes to: <strong style={{color:"var(--text)"}}>{OWNER_UPI}</strong>
+      {/* Chat */}
+      <div className="chat">
+        <div className="ch">Chat</div>
+        <div className="cm" ref={chatRef}>
+          {chat.map((m,i)=>m.sys
+            ?<div key={i} className="msg sys">{m.text}</div>
+            :<div key={i} className="msg">
+              <span className={`snd${m.sender===myRole?" me":""}`}>{m.sender===myRole?"You":oppUpi.split("@")[0]}:</span>
+              {m.text}
+            </div>
+          )}
+        </div>
+        <div className="ci">
+          <input placeholder="Message..." value={chatInput} onChange={e=>setChatInput(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&sendChat()}/>
+          <button className="cs2" onClick={sendChat}>Send</button>
+        </div>
       </div>
-
-      <button className="btn btn-ghost" onClick={onPlayAgain}>Play Again</button>
     </div>
   );
 }
 
-// ── MAIN APP ──────────────────────────────────────────────────────────────────
-export default function App() {
-  const [screen, setScreen] = useState("lobby");
-  const [session, setSession] = useState(null); // { code, upi, role, game }
+// ─── WINNER ───────────────────────────────────────────────────────────────────
+function WinnerScreen({game,myRole,onPlayAgain,settings}){
+  const winner=game.winner;
+  const reason=game.end_reason;
+  const isDraw=winner==="draw";
+  const iWon=winner===myRole;
+  const fee=settings?.entry_fee||10;
+  const cut=settings?.platform_cut||2;
+  const prize=fee*2-cut*2;
+  const ownerUpi=settings?.owner_upi||OWNER_UPI;
+  const winnerUpi=winner==="w"?game.player1_upi:winner==="b"?game.player2_upi:null;
+  const winLink=winnerUpi?upiLink(winnerUpi,"Chess Winner",prize,`Chess winnings Room ${game.id}`):null;
+  const feeLink=upiLink(ownerUpi,"ChessApp Fee",cut*2,`Platform fee Room ${game.id}`);
+  const rmap={checkmate:"by Checkmate",stalemate:"Stalemate",timeout:"on Time",resign:"by Resignation",agreement:"Draw agreed"};
 
-  const handleCreated = ({ code, upi, role }) => {
-    setSession({ code, upi, role, game: null });
-    setScreen("waiting");
+  return(
+    <div className="wp">
+      <div className="ri">{isDraw?"🤝":iWon?"🏆":"😔"}</div>
+      <div className="rt">{isDraw?"Draw":iWon?"You Won!":"You Lost"}</div>
+      <div className="rs">{rmap[reason]||""}</div>
+      <div className="card" style={{width:"100%",textAlign:"left"}}>
+        <div style={{fontWeight:600,color:"#fff",marginBottom:10,fontSize:14}}>Payment Summary</div>
+        <div className="ir"><span className="il">{game.player1_upi}</span><span className="iv">paid ₹{fee}</span></div>
+        <div className="ir"><span className="il">{game.player2_upi}</span><span className="iv">paid ₹{fee}</span></div>
+        <div className="ir"><span className="il">Platform fee</span><span className="iv">₹{cut*2}</span></div>
+        {!isDraw&&<div className="ir tot"><span className="il">{winnerUpi} wins</span><span className="iv">₹{prize}</span></div>}
+        {isDraw&&<div className="ir tot"><span className="il">Each player refund</span><span className="iv">₹{fee-cut}</span></div>}
+      </div>
+      {winLink&&<a className="pb pg" href={winLink}><span>📱</span>Pay ₹{prize} to Winner</a>}
+      <a className="pb pbl" href={feeLink}><span>💼</span>Pay ₹{cut*2} Platform Fee</a>
+      <div style={{fontSize:11,color:"var(--dim)",textAlign:"center",lineHeight:1.8}}>
+        Show winner this screen · Platform fee → {ownerUpi}
+      </div>
+      <button className="btn bg" onClick={onPlayAgain}>New Game</button>
+    </div>
+  );
+}
+
+// ─── ADMIN ────────────────────────────────────────────────────────────────────
+function AdminScreen({onBack}){
+  const [pin,setPin]=useState("");
+  const [auth,setAuth]=useState(false);
+  const [settings,setSettings]=useState({entry_fee:10,platform_cut:2,owner_upi:""});
+  const [games,setGames]=useState([]);
+  const [loading,setLoading]=useState(false);
+  const [saved,setSaved]=useState(false);
+  const [err,setErr]=useState("");
+
+  const login=()=>{
+    if(pin===ADMIN_PIN){setAuth(true);load();}
+    else setErr("Wrong PIN");
+  };
+  const load=async()=>{
+    setLoading(true);
+    const{data:s}=await supabase.from("settings").select("*").eq("id","main").single();
+    if(s)setSettings(s);
+    const{data:g}=await supabase.from("games").select("*").order("created_at",{ascending:false}).limit(20);
+    if(g)setGames(g);
+    setLoading(false);
+  };
+  const save=async()=>{
+    await supabase.from("settings").upsert({id:"main",...settings});
+    setSaved(true);setTimeout(()=>setSaved(false),2000);
   };
 
-  const handleJoined = ({ code, upi, role, p1upi }) => {
-    setSession({ code, upi, role, game: null, p1upi });
-    setScreen("payment");
-    // fetch full game
-    supabase.from("games").select("*").eq("id", code).single().then(({ data }) => {
-      if (data) setSession(s => ({ ...s, game: data }));
-    });
-  };
+  const done=games.filter(g=>g.status==="done").length;
+  const totalFees=done*(settings.platform_cut||2)*2;
 
-  const handleReady = (gameData) => {
-    setSession(s => ({ ...s, game: gameData }));
-    setScreen("payment");
-  };
+  if(!auth)return(
+    <div className="main">
+      <div className="card">
+        <div className="ct">Admin Panel</div>
+        <div className="cs">Enter your PIN to continue</div>
+        <input type="password" placeholder="Admin PIN" value={pin}
+          onChange={e=>{setPin(e.target.value);setErr("");}}
+          onKeyDown={e=>e.key==="Enter"&&login()}/>
+        {err&&<div className="err">{err}</div>}
+        <button className="btn" onClick={login}>Login</button>
+        <button className="btn bg" onClick={onBack}>Back</button>
+      </div>
+    </div>
+  );
 
-  const handlePaid = (gameData) => {
-    // update status to playing
-    supabase.from("games").update({ status: "playing" }).eq("id", gameData.id).then(() => {
-      setSession(s => ({ ...s, game: { ...gameData, status: "playing" } }));
-      setScreen("game");
-    });
-  };
+  return(
+    <div className="ap">
+      <div className="card">
+        <div className="ct" style={{marginBottom:12}}>Dashboard</div>
+        <div className="sg">
+          <div className="sb2"><div className="sn">{games.length}</div><div className="sl">Total Games</div></div>
+          <div className="sb2"><div className="sn">{done}</div><div className="sl">Completed</div></div>
+          <div className="sb2"><div className="sn">₹{totalFees}</div><div className="sl">Fees Earned</div></div>
+          <div className="sb2"><div className="sn">₹{settings.entry_fee||10}</div><div className="sl">Entry Fee</div></div>
+        </div>
+      </div>
+      <div className="card">
+        <div className="ct" style={{marginBottom:12}}>Settings</div>
+        <div style={{fontSize:12,color:"var(--dim)",marginBottom:4}}>Your UPI ID (fees go here)</div>
+        <input placeholder="yourname@upi" value={settings.owner_upi||""} onChange={e=>setSettings({...settings,owner_upi:e.target.value})}/>
+        <div style={{fontSize:12,color:"var(--dim)",marginBottom:4}}>Entry Fee per Player (₹)</div>
+        <input type="number" value={settings.entry_fee||10} onChange={e=>setSettings({...settings,entry_fee:parseInt(e.target.value)||10})}/>
+        <div style={{fontSize:12,color:"var(--dim)",marginBottom:4}}>Your Cut per Player (₹)</div>
+        <input type="number" value={settings.platform_cut||2} onChange={e=>setSettings({...settings,platform_cut:parseInt(e.target.value)||2})}/>
+        <div style={{fontSize:12,color:"var(--gl)",marginBottom:10}}>
+          Prize: ₹{((settings.entry_fee||10)*2)-((settings.platform_cut||2)*2)} · Your earnings/game: ₹{(settings.platform_cut||2)*2}
+        </div>
+        <button className="btn" onClick={save}>{saved?"✅ Saved!":"Save Settings"}</button>
+      </div>
+      <div className="card">
+        <div className="ct" style={{marginBottom:10}}>Recent Games</div>
+        {loading&&<div style={{color:"var(--dim)",fontSize:13}}>Loading...</div>}
+        {games.map(g=>(
+          <div className="gr" key={g.id}>
+            <div className="gt">
+              <span style={{fontWeight:600,color:"#fff"}}>Room #{g.id}</span>
+              <span className={`badge ${g.status==="done"?"bd":g.status==="playing"?"bp":"bw"}`}>{g.status}</span>
+            </div>
+            <div className="gu">{g.player1_upi} vs {g.player2_upi||"waiting..."}</div>
+            {g.winner&&<div style={{fontSize:11,color:"var(--gl)",marginTop:2}}>
+              Winner: {g.winner==="draw"?"Draw":g.winner==="w"?g.player1_upi:g.player2_upi}
+            </div>}
+          </div>
+        ))}
+        {!loading&&games.length===0&&<div style={{color:"var(--dim)",fontSize:13}}>No games yet</div>}
+      </div>
+      <button className="btn bg" onClick={onBack}>← Back</button>
+    </div>
+  );
+}
 
-  const handleGameOver = (gameData) => {
-    setSession(s => ({ ...s, game: gameData }));
-    setScreen("winner");
-  };
+// ─── APP ─────────────────────────────────────────────────────────────────────
+export default function App(){
+  const [screen,setScreen]=useState("lobby");
+  const [session,setSession]=useState(null);
+  const [settings,setSettings]=useState({entry_fee:10,platform_cut:2,owner_upi:OWNER_UPI});
 
-  const handlePlayAgain = () => {
-    setSession(null);
-    setScreen("lobby");
-  };
+  useEffect(()=>{
+    supabase.from("settings").select("*").eq("id","main").single().then(({data})=>{if(data)setSettings(data);});
+  },[]);
 
-  // For waiting screen: also listen for payment screen trigger
-  useEffect(() => {
-    if (screen === "waiting" && session?.code) {
-      supabase.from("games").select("*").eq("id", session.code).single().then(({ data }) => {
-        if (data && (data.status === "payment" || data.status === "playing")) {
-          setSession(s => ({ ...s, game: data }));
-          setScreen("payment");
-        }
-      });
-    }
-  }, [screen, session?.code]);
-
-  return (
+  return(
     <>
       <style>{S}</style>
       <div className="app">
-        <div className="logo">♟ CHECKMATE</div>
-        <div className="tagline">Real Stakes · Real Chess</div>
+        <div className="header">
+          <div className="logo"><span>♟</span>ChessBet</div>
+          <button className="admin-btn" onClick={()=>setScreen(s=>s==="admin"?"lobby":"admin")}>
+            {screen==="admin"?"✕ Close":"⚙ Admin"}
+          </button>
+        </div>
 
-        {screen === "lobby"   && <LobbyScreen onCreated={handleCreated} onJoined={handleJoined} />}
-        {screen === "waiting" && session && <WaitingScreen code={session.code} upi={session.upi} onReady={handleReady} />}
-        {screen === "payment" && session?.game && (
-          <PaymentScreen game={session.game} myUpi={session.upi} myRole={session.role} onPaid={handlePaid} />
-        )}
-        {screen === "game" && session?.game && (
-          <GameScreen game={session.game} myRole={session.role} onGameOver={handleGameOver} />
-        )}
-        {screen === "winner" && session?.game && (
-          <WinnerScreen game={session.game} myRole={session.role} myUpi={session.upi} onPlayAgain={handlePlayAgain} />
-        )}
+        {screen==="admin"&&<AdminScreen onBack={()=>setScreen("lobby")}/>}
+
+        {screen==="lobby"&&
+          <LobbyScreen settings={settings}
+            onCreated={({code,upi,role})=>{setSession({code,upi,role,game:null});setScreen("waiting");}}
+            onJoined={({code,upi,role,game})=>{setSession({code,upi,role,game});setScreen("payment");}}
+          />}
+
+        {screen==="waiting"&&session&&
+          <WaitingScreen code={session.code} upi={session.upi}
+            onReady={g=>{setSession(s=>({...s,game:g}));setScreen("payment");}}
+          />}
+
+        {screen==="payment"&&session?.game&&
+          <PaymentScreen game={session.game} myRole={session.role} myUpi={session.upi} settings={settings}
+            onPaid={async g=>{
+              await supabase.from("games").update({status:"playing"}).eq("id",g.id);
+              setSession(s=>({...s,game:{...g,status:"playing"}}));
+              setScreen("game");
+            }}
+          />}
+
+        {screen==="game"&&session?.game&&
+          <GameScreen game={session.game} myRole={session.role} settings={settings}
+            onGameOver={g=>{setSession(s=>({...s,game:g}));setScreen("winner");}}
+          />}
+
+        {screen==="winner"&&session?.game&&
+          <WinnerScreen game={session.game} myRole={session.role} settings={settings}
+            onPlayAgain={()=>{setSession(null);setScreen("lobby");}}
+          />}
       </div>
     </>
   );
